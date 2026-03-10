@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Сканер штрихкода</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--tg-theme-bg-color, #ffffff);
+      color: var(--tg-theme-text-color, #000000);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+      gap: 12px;
+    }
+    h2 {
+      font-size: 18px;
+      text-align: center;
+      margin-top: 4px;
+    }
+    #reader {
+      width: 100%;
+      max-width: 360px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    #result {
+      width: 100%;
+      max-width: 360px;
+      padding: 14px 16px;
+      background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+      border-radius: 10px;
+      font-size: 15px;
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      transition: background 0.3s;
+    }
+    #result.found {
+      background: #dcfce7;
+      color: #166534;
+      font-weight: bold;
+      font-size: 22px;
+    }
+    .manual-wrap {
+      width: 100%;
+      max-width: 360px;
+      display: flex;
+      gap: 8px;
+    }
+    #manual-input {
+      flex: 1;
+      padding: 12px 14px;
+      border: 1.5px solid var(--tg-theme-hint-color, #cccccc);
+      border-radius: 10px;
+      font-size: 16px;
+      background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+      color: var(--tg-theme-text-color, #000000);
+      outline: none;
+    }
+    #manual-btn {
+      padding: 12px 20px;
+      background: var(--tg-theme-button-color, #2481cc);
+      color: var(--tg-theme-button-text-color, #ffffff);
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #status {
+      font-size: 12px;
+      color: var(--tg-theme-hint-color, #888888);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h2>📷 Сканер штрихкода</h2>
+  <div id="reader"></div>
+  <div id="result">Наведи камеру на штрихкод</div>
+  <div class="manual-wrap">
+    <input id="manual-input" type="text" inputmode="numeric" placeholder="Или введи номер вручную">
+    <button id="manual-btn" onclick="submitManual()">OK</button>
+  </div>
+  <div id="status">Запускаем камеру...</div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    let confirmed = false;
+    const counts = {};
+
+    function submitCode(code) {
+      if (confirmed) return;
+      const num = String(code).trim();
+      if (!num) return;
+      confirmed = true;
+
+      document.getElementById('result').textContent = '✅ ' + num;
+      document.getElementById('result').className = 'found';
+      document.getElementById('status').textContent = 'Отправляем в бот...';
+
+      if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+
+      try { scanner.stop(); } catch(e) {}
+
+      setTimeout(function() {
+        tg.sendData(num);
+      }, 600);
+    }
+
+    function submitManual() {
+      const val = document.getElementById('manual-input').value.trim();
+      if (val) submitCode(val);
+    }
+
+    document.getElementById('manual-input').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') submitManual();
+    });
+
+    // html5-qrcode сканер
+    const scanner = new Html5Qrcode("reader");
+
+    const config = {
+      fps: 10,
+      qrbox: { width: 280, height: 120 },
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+      ]
+    };
+
+    scanner.start(
+      { facingMode: "environment" },
+      config,
+      function(decodedText) {
+        counts[decodedText] = (counts[decodedText] || 0) + 1;
+        document.getElementById('result').textContent = decodedText;
+        if (counts[decodedText] >= 2) {
+          submitCode(decodedText);
+        }
+      },
+      function(err) {
+        // игнорируем ошибки сканирования (кадры без кода)
+      }
+    ).then(function() {
+      document.getElementById('status').textContent = 'Камера активна — наведи на штрихкод';
+    }).catch(function(err) {
+      document.getElementById('status').textContent = 'Ошибка камеры: ' + err;
+    });
+  </script>
+</body>
+</html>
