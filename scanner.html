@@ -101,30 +101,33 @@
         setStatus('sendData не сработал, пробуем API...');
       }
 
-      // Fallback — отправляем через Telegram Bot API напрямую
-      if (chatId && botToken) {
-        fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+      // Fallback — отправляем напрямую на webhook бота
+      if (chatId && botUrl) {
+        // Формируем фейковый Telegram update
+        const fakeUpdate = {
+          update_id: Math.floor(Math.random() * 999999999),
+          message: {
+            message_id: Math.floor(Math.random() * 999999),
+            from: { id: parseInt(chatId), is_bot: false, first_name: "Courier" },
+            chat: { id: parseInt(chatId), type: "private" },
+            date: Math.floor(Date.now() / 1000),
+            text: num
+          }
+        };
+
+        fetch(botUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: num
-          })
-        }).then(function(r) { return r.json(); })
-          .then(function(data) {
-            if (data.ok) {
-              setStatus('✅ Отправлено!');
-              setTimeout(function() { tg.close(); }, 800);
-            } else {
-              document.getElementById('result').className = 'error';
-              setStatus('Ошибка: ' + data.description);
-            }
-          }).catch(function(err) {
-            document.getElementById('result').className = 'error';
-            setStatus('Ошибка сети: ' + err.message);
-          });
+          body: JSON.stringify(fakeUpdate)
+        }).then(function() {
+          setStatus('✅ Готово!');
+          setTimeout(function() { tg.close(); }, 800);
+        }).catch(function(err) {
+          document.getElementById('result').className = 'error';
+          setStatus('Ошибка: ' + err.message);
+        });
       } else {
-        setStatus('⚠️ Нет параметров chat_id/token');
+        setStatus('⚠️ Нет параметров chat_id/bot_url');
       }
     }
 
