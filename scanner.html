@@ -17,35 +17,71 @@
       flex-direction: column;
       align-items: center;
       padding: 16px;
-      gap: 12px;
+      gap: 10px;
     }
-    h2 { font-size: 18px; text-align: center; margin-top: 4px; }
+    h2 { font-size: 17px; text-align: center; margin-top: 4px; }
     #reader { width: 100%; max-width: 360px; border-radius: 12px; overflow: hidden; }
-    #result {
+    #last-scan {
       width: 100%; max-width: 360px;
-      padding: 14px 16px;
+      padding: 10px 14px;
       background: var(--tg-theme-secondary-bg-color, #f0f0f0);
       border-radius: 10px;
-      font-size: 15px; min-height: 50px;
+      font-size: 15px; min-height: 44px;
       display: flex; align-items: center; justify-content: center;
       text-align: center; transition: background 0.3s;
     }
-    #result.found { background: #dcfce7; color: #166534; font-weight: bold; font-size: 22px; }
-    #result.error { background: #fee2e2; color: #991b1b; }
+    #last-scan.found { background: #dcfce7; color: #166534; font-weight: bold; font-size: 20px; }
+    #last-scan.error { background: #fee2e2; color: #991b1b; }
     .manual-wrap { width: 100%; max-width: 360px; display: flex; gap: 8px; }
     #manual-input {
-      flex: 1; padding: 12px 14px;
+      flex: 1; padding: 11px 14px;
       border: 1.5px solid var(--tg-theme-hint-color, #cccccc);
       border-radius: 10px; font-size: 16px;
       background: var(--tg-theme-secondary-bg-color, #f0f0f0);
       color: var(--tg-theme-text-color, #000000); outline: none;
     }
     #manual-btn {
-      padding: 12px 20px;
+      padding: 11px 18px;
       background: var(--tg-theme-button-color, #2481cc);
       color: var(--tg-theme-button-text-color, #ffffff);
       border: none; border-radius: 10px;
       font-size: 16px; font-weight: bold; cursor: pointer;
+    }
+    #list-wrap {
+      width: 100%; max-width: 360px;
+      display: none;
+    }
+    #list-title {
+      font-size: 13px; font-weight: bold;
+      color: var(--tg-theme-hint-color, #888);
+      margin-bottom: 6px;
+    }
+    #list {
+      background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 14px;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+    #list div {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(0,0,0,0.06);
+    }
+    #list div:last-child { border-bottom: none; }
+    .remove-btn {
+      background: none; border: none; cursor: pointer;
+      color: #ef4444; font-size: 16px; padding: 0 4px;
+    }
+    #done-btn {
+      width: 100%; max-width: 360px;
+      padding: 13px;
+      background: #22c55e;
+      color: white;
+      border: none; border-radius: 10px;
+      font-size: 16px; font-weight: bold; cursor: pointer;
+      display: none;
     }
     #status { font-size: 12px; color: var(--tg-theme-hint-color, #888888); text-align: center; }
   </style>
@@ -53,11 +89,16 @@
 <body>
   <h2>📷 Сканер штрихкода</h2>
   <div id="reader"></div>
-  <div id="result">Наведи камеру на штрихкод</div>
+  <div id="last-scan">Наведи камеру на штрихкод</div>
   <div class="manual-wrap">
     <input id="manual-input" type="text" inputmode="numeric" placeholder="Или введи номер вручную">
     <button id="manual-btn" onclick="submitManual()">OK</button>
   </div>
+  <div id="list-wrap">
+    <div id="list-title">Добавлено: <span id="list-count">0</span></div>
+    <div id="list"></div>
+  </div>
+  <button id="done-btn" onclick="sendAll()">✅ Готово — отправить в бот</button>
   <div id="status">Запускаем камеру...</div>
 
   <script>
@@ -65,39 +106,85 @@
     tg.ready();
     tg.expand();
 
-    // Получаем chat_id и токен бота из URL параметров
     const urlParams = new URLSearchParams(window.location.search);
-    const chatId = tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : urlParams.get('chat_id');
+    const batchMode = urlParams.get('batch') === '1';
 
-    let confirmed = false;
+    const scanned = [];
     const counts  = {};
 
     function setStatus(text) {
       document.getElementById('status').textContent = text;
     }
 
+    function updateList() {
+      if (!batchMode) return;
+      const listWrap = document.getElementById('list-wrap');
+      const doneBtn  = document.getElementById('done-btn');
+      const listEl   = document.getElementById('list');
+      const countEl  = document.getElementById('list-count');
+
+      if (scanned.length === 0) {
+        listWrap.style.display = 'none';
+        doneBtn.style.display  = 'none';
+        return;
+      }
+
+      listWrap.style.display = 'block';
+      doneBtn.style.display  = 'block';
+      countEl.textContent    = scanned.length;
+      listEl.innerHTML = scanned.map(function(num, i) {
+        return '<div><span>' + (i+1) + '. ' + num + '</span>' +
+               '<button class="remove-btn" onclick="removeItem(' + i + ')">✕</button></div>';
+      }).join('');
+    }
+
+    function removeItem(index) {
+      scanned.splice(index, 1);
+      updateList();
+    }
+
     function submitCode(code) {
-      if (confirmed) return;
       const num = String(code).trim();
       if (!num) return;
-      confirmed = true;
 
-      document.getElementById('result').textContent = '✅ ' + num;
-      document.getElementById('result').className = 'found';
-      setStatus('Отправляем в бот...');
-
-      if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-      try { scanner.stop(); } catch(e) {}
-
-      setStatus('tg.initData: ' + (tg.initData ? tg.initData.substring(0, 50) : 'ПУСТО'));
-      setTimeout(function() {
-        try {
-          tg.sendData(num);
-          setStatus('sendData OK');
-        } catch(e) {
-          setStatus('sendData ERROR: ' + e.message);
+      if (batchMode) {
+        // Пакетный режим — добавляем в список и продолжаем
+        if (scanned.includes(num)) {
+          document.getElementById('last-scan').textContent = '⚠️ ' + num + ' уже в списке';
+          document.getElementById('last-scan').className = 'error';
+          if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('warning');
+        } else {
+          scanned.push(num);
+          document.getElementById('last-scan').textContent = '✅ ' + num;
+          document.getElementById('last-scan').className = 'found';
+          if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+          updateList();
         }
-      }, 300);
+        // Сбрасываем счётчик для повторного сканирования
+        counts[num] = 0;
+        document.getElementById('manual-input').value = '';
+        // Через 1.5 сек сбрасываем результат
+        setTimeout(function() {
+          document.getElementById('last-scan').textContent = 'Наведи на следующий штрихкод';
+          document.getElementById('last-scan').className = '';
+        }, 1500);
+      } else {
+        // Одиночный режим — отправляем сразу и закрываем
+        document.getElementById('last-scan').textContent = '✅ ' + num;
+        document.getElementById('last-scan').className = 'found';
+        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+        try { scanner.stop(); } catch(e) {}
+        setStatus('Готово!');
+        setTimeout(function() { tg.sendData(num); }, 300);
+      }
+    }
+
+    function sendAll() {
+      if (scanned.length === 0) return;
+      try { scanner.stop(); } catch(e) {}
+      setStatus('Отправляем ' + scanned.length + ' заказов...');
+      // Отправляем все номера через запятую
+      tg.sendData(scanned.join(','));
     }
 
     function submitManual() {
@@ -126,8 +213,13 @@
       config,
       function(decodedText) {
         counts[decodedText] = (counts[decodedText] || 0) + 1;
-        document.getElementById('result').textContent = decodedText;
-        if (counts[decodedText] >= 2) submitCode(decodedText);
+        if (!batchMode) {
+          document.getElementById('last-scan').textContent = decodedText;
+        }
+        if (counts[decodedText] >= 2) {
+          counts[decodedText] = 0;
+          submitCode(decodedText);
+        }
       },
       function(err) {}
     ).then(function() {
