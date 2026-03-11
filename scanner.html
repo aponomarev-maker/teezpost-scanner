@@ -19,68 +19,35 @@
       padding: 16px;
       gap: 12px;
     }
-    h2 {
-      font-size: 18px;
-      text-align: center;
-      margin-top: 4px;
-    }
-    #reader {
-      width: 100%;
-      max-width: 360px;
-      border-radius: 12px;
-      overflow: hidden;
-    }
+    h2 { font-size: 18px; text-align: center; margin-top: 4px; }
+    #reader { width: 100%; max-width: 360px; border-radius: 12px; overflow: hidden; }
     #result {
-      width: 100%;
-      max-width: 360px;
+      width: 100%; max-width: 360px;
       padding: 14px 16px;
       background: var(--tg-theme-secondary-bg-color, #f0f0f0);
       border-radius: 10px;
-      font-size: 15px;
-      min-height: 50px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      transition: background 0.3s;
+      font-size: 15px; min-height: 50px;
+      display: flex; align-items: center; justify-content: center;
+      text-align: center; transition: background 0.3s;
     }
-    #result.found {
-      background: #dcfce7;
-      color: #166534;
-      font-weight: bold;
-      font-size: 22px;
-    }
-    .manual-wrap {
-      width: 100%;
-      max-width: 360px;
-      display: flex;
-      gap: 8px;
-    }
+    #result.found { background: #dcfce7; color: #166534; font-weight: bold; font-size: 22px; }
+    #result.error { background: #fee2e2; color: #991b1b; }
+    .manual-wrap { width: 100%; max-width: 360px; display: flex; gap: 8px; }
     #manual-input {
-      flex: 1;
-      padding: 12px 14px;
+      flex: 1; padding: 12px 14px;
       border: 1.5px solid var(--tg-theme-hint-color, #cccccc);
-      border-radius: 10px;
-      font-size: 16px;
+      border-radius: 10px; font-size: 16px;
       background: var(--tg-theme-secondary-bg-color, #f0f0f0);
-      color: var(--tg-theme-text-color, #000000);
-      outline: none;
+      color: var(--tg-theme-text-color, #000000); outline: none;
     }
     #manual-btn {
       padding: 12px 20px;
       background: var(--tg-theme-button-color, #2481cc);
       color: var(--tg-theme-button-text-color, #ffffff);
-      border: none;
-      border-radius: 10px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
+      border: none; border-radius: 10px;
+      font-size: 16px; font-weight: bold; cursor: pointer;
     }
-    #status {
-      font-size: 12px;
-      color: var(--tg-theme-hint-color, #888888);
-      text-align: center;
-    }
+    #status { font-size: 12px; color: var(--tg-theme-hint-color, #888888); text-align: center; }
   </style>
 </head>
 <body>
@@ -98,8 +65,18 @@
     tg.ready();
     tg.expand();
 
+    // Получаем chat_id и токен бота из URL параметров
+    const urlParams = new URLSearchParams(window.location.search);
+    const chatId    = urlParams.get('chat_id');
+    const botToken  = urlParams.get('token');
+    const botUrl    = urlParams.get('bot_url'); // URL webhook бота
+
     let confirmed = false;
-    const counts = {};
+    const counts  = {};
+
+    function setStatus(text) {
+      document.getElementById('status').textContent = text;
+    }
 
     function submitCode(code) {
       if (confirmed) return;
@@ -109,15 +86,46 @@
 
       document.getElementById('result').textContent = '✅ ' + num;
       document.getElementById('result').className = 'found';
-      document.getElementById('status').textContent = 'Отправляем в бот...';
+      setStatus('Отправляем в бот...');
 
       if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-
       try { scanner.stop(); } catch(e) {}
 
-      setTimeout(function() {
+      // Сначала пробуем sendData
+      try {
         tg.sendData(num);
-      }, 600);
+        setStatus('Готово!');
+        setTimeout(function() { tg.close(); }, 800);
+        return;
+      } catch(e) {
+        setStatus('sendData не сработал, пробуем API...');
+      }
+
+      // Fallback — отправляем через Telegram Bot API напрямую
+      if (chatId && botToken) {
+        fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: num
+          })
+        }).then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.ok) {
+              setStatus('✅ Отправлено!');
+              setTimeout(function() { tg.close(); }, 800);
+            } else {
+              document.getElementById('result').className = 'error';
+              setStatus('Ошибка: ' + data.description);
+            }
+          }).catch(function(err) {
+            document.getElementById('result').className = 'error';
+            setStatus('Ошибка сети: ' + err.message);
+          });
+      } else {
+        setStatus('⚠️ Нет параметров chat_id/token');
+      }
     }
 
     function submitManual() {
@@ -129,9 +137,7 @@
       if (e.key === 'Enter') submitManual();
     });
 
-    // html5-qrcode сканер
     const scanner = new Html5Qrcode("reader");
-
     const config = {
       fps: 10,
       qrbox: { width: 280, height: 120 },
@@ -149,17 +155,13 @@
       function(decodedText) {
         counts[decodedText] = (counts[decodedText] || 0) + 1;
         document.getElementById('result').textContent = decodedText;
-        if (counts[decodedText] >= 2) {
-          submitCode(decodedText);
-        }
+        if (counts[decodedText] >= 2) submitCode(decodedText);
       },
-      function(err) {
-        // игнорируем ошибки сканирования (кадры без кода)
-      }
+      function(err) {}
     ).then(function() {
-      document.getElementById('status').textContent = 'Камера активна — наведи на штрихкод';
+      setStatus('Камера активна — наведи на штрихкод');
     }).catch(function(err) {
-      document.getElementById('status').textContent = 'Ошибка камеры: ' + err;
+      setStatus('Ошибка камеры: ' + err);
     });
   </script>
 </body>
