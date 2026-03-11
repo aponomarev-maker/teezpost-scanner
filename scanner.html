@@ -89,9 +89,14 @@
       if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
       try { scanner.stop(); } catch(e) {}
 
-      setStatus('Готово!');
+      setStatus('tg.initData: ' + (tg.initData ? tg.initData.substring(0, 50) : 'ПУСТО'));
       setTimeout(function() {
-        tg.sendData(num);
+        try {
+          tg.sendData(num);
+          setStatus('sendData OK');
+        } catch(e) {
+          setStatus('sendData ERROR: ' + e.message);
+        }
       }, 300);
     }
 
