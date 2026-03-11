@@ -67,9 +67,7 @@
 
     // Получаем chat_id и токен бота из URL параметров
     const urlParams = new URLSearchParams(window.location.search);
-    const chatId    = urlParams.get('chat_id');
-    const botToken  = urlParams.get('token');
-    const botUrl    = urlParams.get('bot_url'); // URL webhook бота
+    const chatId = tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : urlParams.get('chat_id');
 
     let confirmed = false;
     const counts  = {};
